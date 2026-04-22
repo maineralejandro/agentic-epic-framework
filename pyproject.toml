@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-epic-framework"
+version = "1.0.0"
+description = "Un compilador de documentación que trata Markdown como código fuente, lo lintea con reglas de calidad semántica y lo compila en JSON enriquecido para agentes de IA."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "rich>=13.7.0",
+]
+
+[project.scripts]
+nexus-compiler = "src.nexus_compiler:main"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
