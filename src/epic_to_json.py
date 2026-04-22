@@ -25,6 +25,36 @@ EPIC_HEADER_PATTERN = r'#\s+(?:[\U00010000-\U0010ffff]\s+)?([\w]+-\d+)\s+—\s+(
 MILESTONE_PATTERN = r'###\s+([\w]+-\d+)\s+—\s+([^\n]+)\n\*\*Transición\*\*:\s*`([^`]+)`\s*\n\n\*\*Test de integración de milestone\*\*:\s*([^\n]+)'
 
 
+def _build_epic_context_md(epic, milestone):
+    """Genera un bloque Markdown con el contexto épico para inyectar en la descripción de cada tarea.
+    
+    Este bloque permite que Jules (o cualquier agente) reciba el contexto completo
+    de la épica al ejecutar una tarea individual, sin depender de nodos externos
+    que se pierden al cargar la tarea a BD.
+    """
+    stack_str = " · ".join(epic.get("stack", []))
+    lines = [
+        "---",
+        "## 🌀 Contexto de la Épica (inyectado automáticamente)",
+        "",
+        f"**Épica**: {epic.get('id', '?')} — {epic.get('name', '?')}",
+        f"**Stack**: {stack_str}",
+        f"**Estado inicial**: {epic.get('initial_state', '?')}",
+        f"**Estado final**: {epic.get('final_state', '?')}",
+        "",
+    ]
+    if milestone:
+        lines.extend([
+            f"### Milestone actual: {milestone.get('id', '?')} — {milestone.get('name', '?')}",
+            f"**Transición**: {milestone.get('transition', '?')}",
+            f"**Test de integración**: {milestone.get('integration_test', '?')}",
+            "",
+        ])
+    lines.append("---")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def parse_epic_md(file_path):
     """Parsea un archivo Markdown de épica y retorna un diccionario JSON estructurado.
     
@@ -83,6 +113,9 @@ def parse_epic_md(file_path):
                 "integration_test": test.strip()
             })
 
+    # Crear lookup de milestones por ID para acceso rápido
+    milestones_by_id = {ms["id"]: ms for ms in epic_json["milestones"]}
+
     # 3. Parsear Tareas
     # Dividimos el contenido en bloques usando el patrón generalizado de tareas
     task_split_pattern = rf'\n# (?={TASK_ID_PATTERN} — )'
@@ -101,15 +134,27 @@ def parse_epic_md(file_path):
         task_id = title_match.group(1).strip()
         task_title = title_match.group(2).strip()
         
-        # Extraer Milestone y Riesgo (generalizado)
-        meta_match = re.search(r'> Milestone: ([\w]+-\d+)[^·]+· Risk: (Bajo|Medio|Alto)', full_block)
-        milestone_id = meta_match.group(1).strip() if meta_match else ""
-        risk = meta_match.group(2).strip().upper() if meta_match else "MEDIO"
+        # Extraer Milestone y Riesgo (generalizado y robusto)
+        milestone_match = re.search(r'> Milestone: ([\w]+-\d+)', full_block)
+        milestone_id = milestone_match.group(1).strip() if milestone_match else ""
+        
+        risk_match = re.search(r'· Risk: (?:\[)?(Bajo|Medio|Alto|LOW|MED|HIGH)(?:\])?', full_block, re.IGNORECASE)
+        risk = risk_match.group(1).strip().upper() if risk_match else "MEDIO"
 
         # Generar branch name limpio (git-safe)
         epic_id = epic_json['epic'].get('id', 'unknown')
         epic_name = epic_json['epic'].get('name', 'feature')
         branch_name = re.sub(r'[^a-zA-Z0-9\-]', '-', epic_name).strip('-').lower()
+
+        # Resolver el milestone correspondiente a esta tarea
+        task_milestone = milestones_by_id.get(milestone_id, None)
+
+        # Construir el contexto épico que se inyecta en la descripción
+        epic_context_md = _build_epic_context_md(epic_json["epic"], task_milestone)
+        
+        # La descripción lleva el contexto épico prepended para que Jules
+        # reciba el panorama completo al leer la tarea desde BD
+        enriched_description = epic_context_md + full_block.strip()
 
         epic_json["tasks"].append({
             "id": task_id,
@@ -119,7 +164,11 @@ def parse_epic_md(file_path):
             "priority": risk,
             "status": "draft",
             "created_at": datetime.now().isoformat(),
-            "description": full_block.strip()
+            "epic_context": {
+                "epic": epic_json["epic"],
+                "milestone": task_milestone
+            },
+            "description": enriched_description
         })
 
     # Actualizar contadores
@@ -145,5 +194,6 @@ if __name__ == "__main__":
         print(f"✅ ¡Éxito! JSON generado correctamente en: {output_file}")
         print(f"   - Milestones extraídos: {len(result_json['milestones'])}")
         print(f"   - Tareas extraídas: {len(result_json['tasks'])}")
+        print(f"   - Epic context inyectado: ✅ (cada tarea lleva contexto épico embebido)")
     except Exception as e:
         print(f"❌ Error al parsear el archivo MD: {e}")
