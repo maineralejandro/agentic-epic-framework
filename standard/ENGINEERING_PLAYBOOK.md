@@ -62,12 +62,32 @@ Para optimizar el contexto del agente (LLM), utilizamos **Delimitadores Semánti
 
 ## 4. Protocolos de Gobernanza
 
-### 4.1 Auditoría de Consistencia Cruzada
-Antes de iniciar una tarea, el sistema debe validar la **Integridad Relacional**:
-- ¿Cada archivo `CREATE` tiene su contrato de tipos?
-- ¿Cada `MODIFY` tiene su dependencia técnica justificada?
-- ¿Todos los archivos mencionados en `Tests` existen físicamente o son promesas de creación?
-- **¿Orfandad de UI?**: Si una tarea tiene un `[CREATE]` para un componente visual, ¿Existe un `[MODIFY]` en esa misma tarea (o en una tarea final de ensamblaje) para un archivo de layout/router (ej. `page.tsx`) que garantice que el componente será renderizado?
+### 4.1 Auditoría de Dos Gates (Zero-Tolerance Mode)
+El compilador (`nexus_compiler.py`) evalúa cada tarea con un modelo de **Dos Gates independientes**:
+
+#### Gate 1 — Integridad Estructural (Binario: PASS / BLOCK)
+Valida que la tarea es **ejecutable sin ambigüedad** por un agente autónomo. **Cualquier fallo bloquea la compilación de la tarea.**
+
+| Regla | Qué valida | Fallo = |
+|---|---|---|
+| Headers obligatorios | Las 14 secciones del template deben existir | BLOCK |
+| Anti-Filler | Prohibido: `N/A`, `TBD`, `Por definir`, `Completar` | BLOCK |
+| Contrato CREATE→Tipos | Si hay archivos `CREATE`, debe haber código en `## Tipos esperados` | BLOCK |
+| Tests no vacíos | `## Tests` debe tener ≥ 1 fila con casos clave descritos | BLOCK |
+| Tests sin fantasmas | Archivos en `## Tests` deben estar declarados en `## Archivos` | BLOCK |
+
+**Regla crítica para la IA generadora**: Si una sección no aplica a la tarea, NUNCA usar `N/A`. En su lugar, explicar brevemente por qué no aplica. Ejemplo: en vez de `N/A`, escribir `"No hay componentes visuales — tarea de migración de base de datos."`
+
+#### Gate 2 — Calidad de Diseño (Score 0-100, informativo)
+Evalúa la **robustez del diseño**. Un score bajo no bloquea, pero genera warnings visibles en el JSON.
+
+| Métrica | Qué evalúa |
+|---|---|
+| Granularidad del Objetivo | ≥ 30 palabras en `## Objetivo` |
+| Orfandad de UI | Visual creado sin `MODIFY` en layout/router |
+| Cobertura de tests | Ratio de archivos con test asociado (informativo) |
+
+El autor de la épica decide qué archivos necesitan tests. El framework solo asegura que **la pregunta no fue ignorada**.
 
 ### 4.2 Protocolo de Rescate (Ghost Task Protection)
 Si se identifica una tarea marcada como `done` pero cuya infraestructura física no existe o está degradada (Fallo de Fidelidad), el sistema debe:
@@ -85,3 +105,8 @@ Si durante la ejecución se descubre una dependencia imprevista:
 
 ## 5. Firma de Diseño
 El flujo de compilación de épicas (vía `nexus_compiler.py`) requiere siempre una **Firma de Aprobación Humana**. La IA propone o estructura el diseño; el humano lo valida y "firma" (hace commit/aprueba) antes de que pase a ejecución activa.
+
+Una épica solo puede pasar a estado `TODO` si:
+1. **Gate 1 = PASS** en todas las tareas (status global: `READY`).
+2. **Gate 2** ha sido revisado por el humano (el score de calidad es informativo pero debe ser consciente).
+3. La **Firma de Aprobación** al final del documento está completa.

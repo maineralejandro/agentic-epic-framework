@@ -12,7 +12,7 @@ console = Console()
 
 MANDATORY_HEADERS = [
     r"^#\s+\[?[\w\-]+\]?\s+—\s+.+",      # Title
-    r"^>\s+Milestone:\s+[\w\-]+",  # Metadata
+    r"^\>\s+Milestone:\s+[\w\-]+",  # Metadata
     r"## Objetivo",
     r"## Dependencias consumidas",
     r"## Archivos",
@@ -51,12 +51,6 @@ def _is_table_separator(line):
     """Detecta separadores de tabla MD en cualquier variante de alineación."""
     return bool(_TABLE_SEPARATOR_RE.match(line.strip()))
 
-def _is_table_header(line, is_first_data_row, next_line=None):
-    """Detecta si una fila de tabla es el header (la fila antes del separador)."""
-    if next_line and _is_table_separator(next_line):
-        return True
-    return is_first_data_row
-
 def extract_table_data(section_content):
     """Extrae datos estructurados de una tabla Markdown.
     
@@ -92,28 +86,55 @@ def extract_table_data(section_content):
     
     return results
 
+
 def audit_description(task_id, description):
-    """Audita la descripción de una tarea contra los 14 puntos del Antigravity Standard.
+    """Audita la descripción de una tarea con el modelo de Dos Gates.
     
-    Utiliza un enfoque de "Contrato Maestro" basado en conjuntos (Sets) para
-    eliminar falsos positivos y asegurar integridad referencial estricta.
+    Gate 1 — Integridad Estructural (binario PASS/BLOCK):
+        Valida que la tarea contiene toda la información necesaria para que
+        un agente autónomo pueda ejecutarla sin ambigüedad.
+        Cualquier fallo en Gate 1 bloquea la compilación de la tarea.
+    
+    Gate 2 — Calidad de Diseño (score 0-100, informativo):
+        Evalúa la robustez del diseño. Un score bajo no bloquea, pero
+        señala oportunidades de mejora visibles en los metadatos del JSON.
+    
+    Returns:
+        dict: {
+            "integrity": {"pass": bool, "blockers": [str]},
+            "quality": {"score": int, "findings": [str]}
+        }
     """
-    score = 100
-    findings = []
+    gate1_blockers = []
+    quality_score = 100
+    quality_findings = []
     
     if not description or len(description) < 50:
-        return 0, ["Descripción vacía o demasiado corta"]
+        return {
+            "integrity": {"pass": False, "blockers": ["Descripción vacía o demasiado corta"]},
+            "quality": {"score": 0, "findings": []}
+        }
 
     # 0. Normalización Segura (Preserva genéricos como Array<string>)
     clean_desc = description.replace('\r\n', '\n').strip()
 
-    # 1. Headers Obligatorios (Deducción: -5 por cada uno)
+    # ═══════════════════════════════════════════════════════════
+    # GATE 1: INTEGRIDAD ESTRUCTURAL (Cualquier fallo = BLOCK)
+    # ═══════════════════════════════════════════════════════════
+
+    # 1.1 Headers Obligatorios — Sin ellos, el agente no sabe qué hacer
     for pattern in MANDATORY_HEADERS:
         if not re.search(pattern, clean_desc, re.MULTILINE | re.IGNORECASE):
-            score -= 5
-            findings.append(f"Falta: {HEADER_LABELS.get(pattern, 'Sección desconocida')}")
+            gate1_blockers.append(f"Falta sección: {HEADER_LABELS.get(pattern, 'Desconocida')}")
 
-    # 2. Extracción del "Contrato Maestro" (Sección Archivos)
+    # 1.2 Anti-Filler — Placeholders causan alucinación en agentes
+    filler_patterns = [r"\bN/A\b", r"\bTBD\b", r"\bPor definir\b", r"\bCompletar\b"]
+    for fp in filler_patterns:
+        if re.search(fp, clean_desc, re.IGNORECASE):
+            gate1_blockers.append(f"Placeholder no permitido: '{fp.replace(chr(92) + 'b', '')}'")
+            break
+
+    # 1.3 Contrato CREATE → Tipos — Archivos sin tipos = agente adivina
     files_declared = set()
     files_to_create = set()
     
@@ -124,43 +145,59 @@ def audit_description(task_id, description):
             files_declared.add(filename)
             if "CREATE" in full_line.upper():
                 files_to_create.add(filename)
-    else:
-        # Si no hay sección de archivos, ya se restó en el paso 1, pero aquí evitamos crash
-        pass
 
-    # 3. Consistencia: CREATE -> Tipos
     if files_to_create:
-        if "## Tipos esperados" in clean_desc:
-            tipos_section = re.search(r"## Tipos esperados(.*?)(##|$)", clean_desc, re.DOTALL | re.IGNORECASE)
-            tipos_content = tipos_section.group(1) if tipos_section else ""
-            if "```" not in tipos_content:
-                score -= 10
-                findings.append(f"Contrato: Se declaran CREATE ({len(files_to_create)} archivos) pero falta bloque de código en Tipos")
-        else:
-            score -= 10
-            findings.append("Contrato: Se declaran CREATE pero falta header '## Tipos esperados'")
+        tipos_section = re.search(r"## Tipos esperados(.*?)(##|$)", clean_desc, re.DOTALL | re.IGNORECASE)
+        tipos_content = tipos_section.group(1) if tipos_section else ""
+        if "```" not in tipos_content:
+            gate1_blockers.append(
+                f"Contrato roto: {len(files_to_create)} archivos CREATE sin bloque de código en Tipos"
+            )
 
-    # 4. Paridad Relacional Estricta: Tests vs Archivos Declarados
+    # 1.4 Tests: tabla no vacía y cada test con casos clave descritos
     tests_section = re.search(r"## Tests(.*?)(##|$)", clean_desc, re.DOTALL | re.IGNORECASE)
     if tests_section:
         test_table = extract_table_data(tests_section.group(1))
         files_in_tests = {t[0] for t in test_table}
         
-        # Violación: Archivo en Tests que no existe en la sección Archivos
+        # Gate 1: Al menos un test declarado
+        if len(test_table) == 0:
+            gate1_blockers.append(
+                "Tests vacíos: La sección ## Tests no contiene ningún test declarado"
+            )
+        else:
+            # Gate 1: Verificar que "Casos clave" (tercera columna) no esté vacía
+            for filename, full_line in test_table:
+                cells = [c.strip() for c in full_line.strip().split('|')]
+                # cells: ['', col1, col2, col3, ''] para | col1 | col2 | col3 |
+                if len(cells) >= 4:
+                    casos_clave = cells[3].strip()
+                    if not casos_clave or casos_clave.lower() in ['tbd', 'n/a', 'por definir', '']:
+                        gate1_blockers.append(
+                            f"Test '{filename}' sin casos clave descritos"
+                        )
+        
+        # Gate 1: Referencias fantasma — test que no existe en Archivos
         unknown_tests = files_in_tests - files_declared
         for ut in unknown_tests:
-            # Heurística: Si no tiene punto o slash, probablemente sea un error de parseo o texto vago
+            # Heurística: Si no tiene punto o slash, es texto vago, no un archivo real
             if "." in ut or "/" in ut:
-                score -= 10
-                findings.append(f"Violación de Contrato: Test '{ut}' no declarado en sección Archivos")
-        
-        # Auditoría Proactiva (Staff level): Archivos sin tests
-        uncovered = files_declared - files_in_tests
-        if uncovered:
-            # No restamos score por ahora para no ser punitivos, pero informamos
-            findings.append(f"Calidad: {len(uncovered)} archivos declarados no tienen test asociado (ej: {list(uncovered)[0]})")
+                gate1_blockers.append(f"Test fantasma: '{ut}' no declarado en sección Archivos")
 
-    # 4.5. Prevención de Orfandad de UI (Integration-Last Rule)
+    # ═══════════════════════════════════════════════════════════
+    # GATE 2: CALIDAD DE DISEÑO (Score informativo, no bloquea)
+    # ═══════════════════════════════════════════════════════════
+
+    # 2.1 Granularidad: ## Objetivo >= 30 palabras
+    objetivo_match = re.search(r"## Objetivo(.*?)(##|$)", clean_desc, re.DOTALL | re.IGNORECASE)
+    if objetivo_match:
+        obj_text = objetivo_match.group(1).strip()
+        word_count = len(obj_text.split())
+        if word_count < 30:
+            quality_score -= 10
+            quality_findings.append(f"Objetivo corto ({word_count} palabras, recomendado 30+)")
+
+    # 2.2 Prevención de Orfandad de UI (Integration-Last Rule)
     if archivos_section:
         visual_extensions = ('.tsx', '.jsx', '.vue', '.html')
         visual_creates = [f for f in files_to_create if any(f.endswith(ext) for ext in visual_extensions)]
@@ -173,25 +210,29 @@ def audit_description(task_id, description):
             )
             
             if not has_integration and "Integration" not in clean_desc:
-                score -= 5
-                findings.append(f"Orfandad UI: Se crea visual ({visual_creates[0]}) sin MODIFY en router/layout")
+                quality_score -= 5
+                quality_findings.append(
+                    f"Orfandad UI: Se crea visual ({visual_creates[0]}) sin MODIFY en router/layout"
+                )
 
-    # 5. Granularidad: ## Objetivo >= 30 palabras
-    objetivo_match = re.search(r"## Objetivo(.*?)(##|$)", clean_desc, re.DOTALL | re.IGNORECASE)
-    if objetivo_match:
-        obj_text = objetivo_match.group(1).strip()
-        word_count = len(obj_text.split())
-        if word_count < 30:
-            score -= 10
-            findings.append(f"Objetivo vago ({word_count} palabras, requiere 30+)")
+    # 2.3 Ratio de cobertura de tests (informativo, sin penalización)
+    if tests_section and files_declared:
+        test_table_data = extract_table_data(tests_section.group(1))
+        files_in_tests_set = {t[0] for t in test_table_data}
+        covered = len(files_in_tests_set & files_declared)
+        total = len(files_declared)
+        coverage_ratio = (covered / total) * 100 if total > 0 else 0
+        quality_findings.append(
+            f"Cobertura de tests: {coverage_ratio:.0f}% ({covered}/{total} archivos)"
+        )
 
-    # 6. Densidad Semántica (Anti-Filler)
-    filler_patterns = [r"N/A", r"TBD", r"Por definir", r"Completar"]
-    for fp in filler_patterns:
-        if re.search(fp, clean_desc, re.IGNORECASE):
-            score -= 5
-            findings.append(f"Baja densidad: Uso de '{fp}' detectado")
-            break
-
-    return max(0, min(100, int(score))), findings
-
+    return {
+        "integrity": {
+            "pass": len(gate1_blockers) == 0,
+            "blockers": gate1_blockers
+        },
+        "quality": {
+            "score": max(0, min(100, int(quality_score))),
+            "findings": quality_findings
+        }
+    }

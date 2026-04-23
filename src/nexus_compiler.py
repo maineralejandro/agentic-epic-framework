@@ -19,7 +19,10 @@ class CompilationError(Exception):
     pass
 
 def compile_epic(md_file_path):
-    """Compila un archivo Markdown a JSON enriquecido con auditoría.
+    """Compila un archivo Markdown a JSON enriquecido con auditoría de Dos Gates.
+    
+    Gate 1 — Integridad Estructural: Binario PASS/BLOCK por tarea.
+    Gate 2 — Calidad de Diseño: Score 0-100 informativo por tarea.
     
     Raises:
         FileNotFoundError: Si el archivo no existe.
@@ -45,63 +48,97 @@ def compile_epic(md_file_path):
     if total_tasks == 0:
         raise CompilationError("No se encontraron tareas. Verifica que el formato del Markdown coincide con el epic_template.md.")
     
-    # 2. Ejecutar Auditoría (Pipeline 2)
-    console.print("\n[yellow]2. Ejecutando Auditoría Antigravity Standard (14 puntos)...[/yellow]")
+    # 2. Ejecutar Auditoría de Dos Gates (Pipeline 2)
+    console.print("\n[yellow]2. Ejecutando Auditoría Antigravity Standard (Dos Gates)...[/yellow]")
     
     # Agregador de métricas para observabilidad total
     stats = {
-        "passed": 0,
-        "failed": 0,
-        "errors": 0,
-        "total_score": 0
+        "integrity_pass": 0,
+        "integrity_block": 0,
+        "quality_total": 0,
+        "errors": 0
     }
     
     for task in epic_json["tasks"]:
         try:
-            score, findings = audit_description(task["id"], task["description"])
+            result = audit_description(task["id"], task["description"])
+            
+            gate1 = result["integrity"]
+            gate2 = result["quality"]
             
             task["audit"] = {
-                "score": score,
-                "status": "PASS" if score >= 90 else "FAIL",
-                "findings": findings
+                "integrity": "PASS" if gate1["pass"] else "BLOCK",
+                "blockers": gate1["blockers"],
+                "quality_score": gate2["score"],
+                "quality_findings": gate2["findings"]
             }
             
-            stats["total_score"] += score
-            if score >= 90:
-                stats["passed"] += 1
+            stats["quality_total"] += gate2["score"]
+            if gate1["pass"]:
+                stats["integrity_pass"] += 1
             else:
-                stats["failed"] += 1
-                
-            color = "green" if score >= 90 else ("yellow" if score >= 70 else "red")
-            console.print(f"   - {task['id']}: [{color}]{score}%[/] " + (f"({len(findings)} findings)" if findings else ""))
+                stats["integrity_block"] += 1
+            
+            # Formato visual del reporte
+            if gate1["pass"]:
+                color = "green" if gate2["score"] >= 90 else "yellow"
+                icon = "✅"
+                blocker_info = ""
+            else:
+                color = "red"
+                icon = "🔴"
+                blocker_info = f" — {len(gate1['blockers'])} blocker(s)"
+            
+            console.print(
+                f"   - {task['id']}: [{color}]{icon} Gate 1: {'PASS' if gate1['pass'] else 'BLOCK'}[/] "
+                f"| Quality: {gate2['score']}%{blocker_info}"
+            )
+            
+            # Mostrar blockers en detalle si los hay
+            if gate1["blockers"]:
+                for blocker in gate1["blockers"]:
+                    console.print(f"     [red]↳ {blocker}[/red]")
             
         except Exception as e:
             stats["errors"] += 1
             console.print(f"   - {task['id']}: [bold red]FATAL ERROR[/] - {str(e)}")
             task["audit"] = {
-                "score": 0,
-                "status": "SYSTEM_ERROR",
-                "error_detail": str(e)
+                "integrity": "SYSTEM_ERROR",
+                "blockers": [str(e)],
+                "quality_score": 0,
+                "quality_findings": []
             }
 
     # 3. Enriquecer Metadatos Globales (Pipeline 3)
     console.print("\n[yellow]3. Generando métricas enriquecidas...[/yellow]")
     
-    # Cálculo Staff: Separamos fidelidad (calidad) de cobertura (integridad)
-    auditable_tasks = stats["passed"] + stats["failed"]
-    avg_health = (stats["total_score"] / auditable_tasks) if auditable_tasks > 0 else 0
-    coverage = (auditable_tasks / total_tasks) * 100 if total_tasks > 0 else 0
+    # Cálculos separados: Integridad (binario) vs Calidad (score)
+    auditable_tasks = stats["integrity_pass"] + stats["integrity_block"]
+    avg_quality = (stats["quality_total"] / auditable_tasks) if auditable_tasks > 0 else 0
+    integrity_rate = (stats["integrity_pass"] / total_tasks) * 100 if total_tasks > 0 else 0
+    
+    # Determinar estado global del compilado
+    if stats["errors"] > 0:
+        global_status = "INCOMPLETE"
+    elif stats["integrity_block"] > 0:
+        global_status = "BLOCKED"
+    else:
+        global_status = "READY"
     
     # Metadatos de alta fidelidad para procesos downstream
-    epic_json["execution_metadata"]["backlog_health"] = f"{avg_health:.1f}%"
+    epic_json["execution_metadata"]["audit_model"] = "two-gate-v1"
+    epic_json["execution_metadata"]["backlog_health"] = f"{avg_quality:.1f}%"
     epic_json["execution_metadata"]["audit_summary"] = {
-        "status": "COMPLETED" if stats["errors"] == 0 else "INCOMPLETE",
-        "metrics": {
-            "passed": stats["passed"],
-            "failed": stats["failed"],
-            "system_errors": stats["errors"],
-            "audit_coverage": f"{coverage:.1f}%"
-        }
+        "status": global_status,
+        "gate_1_integrity": {
+            "pass": stats["integrity_pass"],
+            "blocked": stats["integrity_block"],
+            "rate": f"{integrity_rate:.1f}%"
+        },
+        "gate_2_quality": {
+            "average_score": f"{avg_quality:.1f}%"
+        },
+        "system_errors": stats["errors"]
     }
     
     # 4. Guardar JSON Final (safe path handling)
@@ -109,10 +146,16 @@ def compile_epic(md_file_path):
     json_path = f"{file_base}.json"
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(epic_json, f, indent=2, ensure_ascii=False)
-        
-    status_color = "green" if stats["errors"] == 0 else "yellow"
-    console.print(f"\n[bold {status_color}]✨ Compilación finalizada ({epic_json['execution_metadata']['audit_summary']['status']})[/bold {status_color}]")
-    console.print(f"📊 [bold]Backlog Health Global:[/bold] {avg_health:.1f}% | [bold]Cobertura:[/bold] {coverage:.1f}%")
+    
+    # Reporte final
+    if global_status == "READY":
+        console.print(f"\n[bold green]✨ Compilación exitosa (READY)[/bold green]")
+    elif global_status == "BLOCKED":
+        console.print(f"\n[bold red]🚫 Compilación BLOQUEADA — {stats['integrity_block']} tarea(s) no pasan Gate 1[/bold red]")
+    else:
+        console.print(f"\n[bold yellow]⚠️ Compilación INCOMPLETA — {stats['errors']} error(es) de sistema[/bold yellow]")
+    
+    console.print(f"📊 [bold]Integridad:[/bold] {integrity_rate:.1f}% | [bold]Calidad Promedio:[/bold] {avg_quality:.1f}%")
     
     return json_path
 
