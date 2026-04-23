@@ -17,10 +17,10 @@ El ciclo de vida completo bajo este framework sigue esta canalización exacta:
 
 1. **Idea:** Nace un requerimiento o funcionalidad.
 2. **Playbook:** Se consulta el *Antigravity Standard* (`ENGINEERING_PLAYBOOK.md`) para entender las reglas del juego.
-3. **MD:** El usuario le pide a una IA que escriba la épica utilizando el Playbook y el `epic_template.md`.
-4. **MD to JSON:** `nexus_compiler.py` extrae las tareas, contexto y arquitectura.
-5. **Audit Log:** El compilador ejecuta `audit_backlog.py` para asegurar que las tareas cumplan con los 14 puntos de fidelidad.
-6. **JSON:** Se emite el artefacto final enriquecido, 100% determinista y listo para que un agente de IA lo ejecute sin desviaciones.
+3. **Redacción:** Se crea el archivo `.md` de la épica en la carpeta `scratch/` utilizando el Playbook y el `epic_template.md`. Esta carpeta es privada y está ignorada por Git.
+4. **Compilación:** Se ejecuta `python src/nexus_compiler.py scratch/mi-epica.md`. El compilador genera el JSON enriquecido en la misma ubicación.
+5. **Auditoría:** El compilador invoca automáticamente `audit_backlog.py` para asegurar que las tareas cumplan con los 14 puntos de fidelidad.
+6. **Artefacto:** Se obtiene el JSON final, 100% determinista y listo para ser ejecutado por un agente de IA.
 
 ## 📂 Estructura del Proyecto
 
@@ -30,6 +30,7 @@ agentic-epic-framework/
 ├── requirements.txt
 ├── pyproject.toml
 ├── .gitignore
+├── scratch/                   # Mesa de trabajo privada (Ignorada por Git)
 │
 ├── standard/
 │   ├── ENGINEERING_PLAYBOOK.md    # Manifiesto y reglas de oro
@@ -56,13 +57,13 @@ pip install -r requirements.txt
 
 ### 2. Compilar una épica
 ```bash
-python src/nexus_compiler.py examples/EPIC-EXAMPLE.md
+python src/nexus_compiler.py scratch/mi-epica.md
 ```
 
 ### 3. Instalación como CLI global (opcional)
 ```bash
 pip install -e .
-nexus-compiler mi-epica.md
+nexus-compiler scratch/mi-epica.md
 ```
 
 ## 🛠️ Cómo integrarlo en tus proyectos
@@ -70,11 +71,11 @@ nexus-compiler mi-epica.md
 1.  **Como Submódulo de Git:**
     ```bash
     git submodule add https://github.com/maineralejandro/agentic-epic-framework.git tools/epic-framework
-    python tools/epic-framework/src/nexus_compiler.py docs/MI-EPICA.md
+    python tools/epic-framework/src/nexus_compiler.py scratch/mi-epica.md
     ```
 
 2.  **Como Plantilla (Template Repository):**
     Marca este repositorio como "Template" en GitHub. Al iniciar un proyecto con IA, presiona "Use this template" y tendrás el Playbook y el Compilador pre-instalados.
 
 3.  **Como paquete CLI global:**
-    Gracias al `pyproject.toml`, puedes instalar vía `pip install -e .` y ejecutar `nexus-compiler epic.md` desde cualquier ruta.
+    Gracias al `pyproject.toml`, puedes instalar vía `pip install -e .` y ejecutar `nexus-compiler scratch/mi-epica.md` desde cualquier ruta.

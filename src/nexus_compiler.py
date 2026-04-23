@@ -58,6 +58,8 @@ def compile_epic(md_file_path):
         "quality_total": 0,
         "errors": 0
     }
+    # Colector de hallazgos de calidad para la sección OBSERVACIONES
+    all_findings = []
     
     for task in epic_json["tasks"]:
         try:
@@ -98,6 +100,18 @@ def compile_epic(md_file_path):
             if gate1["blockers"]:
                 for blocker in gate1["blockers"]:
                     console.print(f"     [red]↳ {blocker}[/red]")
+            
+            # Mostrar hallazgos de calidad inline y recolectarlos
+            if gate2["findings"]:
+                for finding in gate2["findings"]:
+                    # Clasificar: ⚠ para penalizaciones, ℹ para informativos
+                    is_warning = any(k in finding.lower() for k in ["orfandad", "corto", "objetivo corto"])
+                    if is_warning:
+                        console.print(f"     [yellow]⚠ {finding}[/yellow]")
+                        all_findings.append((task["id"], "⚠", finding))
+                    else:
+                        console.print(f"     [blue]ℹ {finding}[/blue]")
+                        all_findings.append((task["id"], "ℹ", finding))
             
         except Exception as e:
             stats["errors"] += 1
@@ -156,6 +170,28 @@ def compile_epic(md_file_path):
         console.print(f"\n[bold yellow]⚠️ Compilación INCOMPLETA — {stats['errors']} error(es) de sistema[/bold yellow]")
     
     console.print(f"📊 [bold]Integridad:[/bold] {integrity_rate:.1f}% | [bold]Calidad Promedio:[/bold] {avg_quality:.1f}%")
+    
+    # ═══════════════════════════════════════════════════════════
+    # SECCIÓN OBSERVACIONES — Bloque independiente para máxima
+    # visibilidad. Diseñado para que agentes de IA no puedan
+    # ignorar los hallazgos de calidad tras ver un Gate 1 PASS.
+    # ═══════════════════════════════════════════════════════════
+    if all_findings:
+        console.print("\n[bold]═══════════════════════════════════════════════════════════[/bold]")
+        console.print(f"[bold]📋 OBSERVACIONES DEL COMPILADOR ({len(all_findings)} hallazgo(s))[/bold]")
+        console.print("[bold]═══════════════════════════════════════════════════════════[/bold]")
+        for task_id, icon, finding in all_findings:
+            if icon == "⚠":
+                console.print(f"  [yellow]{icon} {task_id}: {finding}[/yellow]")
+            else:
+                console.print(f"  [blue]{icon} {task_id}: {finding}[/blue]")
+        console.print("[bold]═══════════════════════════════════════════════════════════[/bold]")
+        console.print(
+            "[bold cyan]🤖 DIRECTIVA PARA AGENTES:[/bold cyan] Si estás ejecutando este\n"
+            "   backlog de forma autónoma, [bold]DEBES reportar TOTAS las observaciones[/bold]\n"
+            "   anteriores al usuario antes de iniciar la primera tarea."
+        )
+        console.print("[bold]═══════════════════════════════════════════════════════════[/bold]")
     
     return json_path
 

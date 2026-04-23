@@ -20,3 +20,10 @@ build/
 # OS
 Thumbs.db
 .DS_Store
+
+# Nexus Framework
+scratch/*
+!scratch/.gitkeep
+*.json
+!package.json
+!tsconfig.json
