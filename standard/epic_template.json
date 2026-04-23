@@ -1,0 +1,82 @@
+{
+  "epic": {
+    "id": "M1-01",
+    "name": "[Nombre del Milestone]",
+    "stack": [
+      "Ej. Next.js 14",
+      "TypeScript",
+      "Supabase"
+    ],
+    "initial_state": "[Capacidad actual del sistema antes de esta épica]",
+    "final_state": "[Capacidad deseada después de completarla]"
+  },
+  "milestones": [
+    {
+      "id": "M1-01",
+      "name": "[Nombre del Milestone]",
+      "transition": "[Estado A (Limitación) → Estado B (Capacidad)]",
+      "integration_test": "[Descripción determinista de cómo validar que este milestone está completo]"
+    }
+  ],
+  "execution_metadata": {
+    "generated_at": "2026-04-23T01:18:21.534774",
+    "source_file": "epic_template.md",
+    "signature": {
+      "status": "DRAFT",
+      "approved_by": null,
+      "approved_at": null
+    },
+    "total_tasks": 1,
+    "backlog_health": "75.0%",
+    "audit_summary": {
+      "status": "COMPLETED",
+      "metrics": {
+        "passed": 0,
+        "failed": 1,
+        "system_errors": 0,
+        "audit_coverage": "100.0%"
+      }
+    }
+  },
+  "tasks": [
+    {
+      "id": "EXX-T01",
+      "title": "[Título descriptivo y determinista]",
+      "milestone_id": "M1-01",
+      "target_branch": "epic/M1-01-nombre-del-milestone",
+      "priority": "BAJO",
+      "status": "draft",
+      "created_at": "2026-04-23T01:18:21.535433",
+      "epic_context": {
+        "epic": {
+          "id": "M1-01",
+          "name": "[Nombre del Milestone]",
+          "stack": [
+            "Ej. Next.js 14",
+            "TypeScript",
+            "Supabase"
+          ],
+          "initial_state": "[Capacidad actual del sistema antes de esta épica]",
+          "final_state": "[Capacidad deseada después de completarla]"
+        },
+        "milestone": {
+          "id": "M1-01",
+          "name": "[Nombre del Milestone]",
+          "transition": "[Estado A (Limitación) → Estado B (Capacidad)]",
+          "integration_test": "[Descripción determinista de cómo validar que este milestone está completo]"
+        }
+      },
+      "description": "---\n## 🌀 Contexto de la Épica (inyectado automáticamente)\n\n**Épica**: M1-01 — [Nombre del Milestone]\n**Stack**: Ej. Next.js 14 · TypeScript · Supabase\n**Estado inicial**: [Capacidad actual del sistema antes de esta épica]\n**Estado final**: [Capacidad deseada después de completarla]\n\n### Milestone actual: M1-01 — [Nombre del Milestone]\n**Transición**: [Estado A (Limitación) → Estado B (Capacidad)]\n**Test de integración**: [Descripción determinista de cómo validar que este milestone está completo]\n\n---\n# EXX-T01 — [Título descriptivo y determinista]\n> Milestone: M1-01 — [Nombre del Milestone] · Risk: [Bajo/Medio/Alto]\n\n## Objetivo\n[Definición clara del valor técnico y funcional de esta tarea. Mínimo 30 palabras. Explica el POR QUÉ, el QUÉ y el impacto si no se hace.]\n\n## Dependencias consumidas\n| Tarea | Qué aporta |\n|:---|:---|\n| [DEP-ID] | [Componente o conocimiento heredado] |\n\n## Archivos\n| Archivo | Acción | Responsabilidad |\n|:---|:---|:---|\n| `ruta/al/archivo.py` | CREATE | [Qué hace este archivo] |\n| `ruta/al/otro.py` | MODIFY | [Qué se modifica y por qué] |\n\n## Tipos esperados\n```python\n# Definir dataclasses, enums o interfaces aquí\n# Obligatorio si hay al menos un CREATE en la tabla de Archivos\n```\n\n## Decisiones técnicas\n\n### Datos\n[Estrategia de persistencia y flujo de datos]\n\n### Acceso / Seguridad\n[Aislamiento, permisos, reglas de acceso]\n\n### UI / Contrato de componentes\n[Interfaz expuesta, props, eventos]\n\n## Tests\n| Archivo | Tipo | Casos clave |\n|:---|:---|:---|\n| `tests/test_ejemplo.py` | Unit | [Descripción de los casos de prueba] |\n\n## Estados UI requeridos\n- Loading\n- Empty\n- Error\n- Success\n\n## Fuera de scope\n- [Punto explícitamente fuera de alcance para esta tarea]\n\n## Criterio de salida\n| Escenario | Resultado esperado |\n|:---|:---|\n| [Escenario de validación] | [Resultado determinista esperado] |\n\n---\n\n*(Repetir la estructura de tareas según sea necesario)*",
+      "audit": {
+        "score": 75,
+        "status": "FAIL",
+        "findings": [
+          "Violación de Contrato: Test 'tests/test_ejemplo.py' no declarado en sección Archivos",
+          "Calidad: 2 archivos declarados no tienen test asociado (ej: ruta/al/otro.py)",
+          "Objetivo vago (26 palabras, requiere 30+)",
+          "Baja densidad: Uso de 'Completar' detectado"
+        ]
+      }
+    }
+  ]
+}

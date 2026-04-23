@@ -2,6 +2,7 @@ import re
 import json
 import os
 from datetime import datetime
+import warnings
 
 # ============================================================================
 # PATRONES DE ID GENERALIZADOS
@@ -19,8 +20,8 @@ from datetime import datetime
 
 # Regex para capturar IDs de tareas: cualquier WORD seguido de -T y dígitos
 TASK_ID_PATTERN = r'[\w]+-T\d+'
-# Regex para el header de la épica (acepta emoji opcional antes del ID)
-EPIC_HEADER_PATTERN = r'#\s+(?:[\U00010000-\U0010ffff]\s+)?([\w]+-\d+)\s+—\s+(.+)'
+# Regex para el header de la épica (acepta cualquier decoración/emoji opcional antes del ID)
+EPIC_HEADER_PATTERN = r'#\s+(?:.*?\s+)?([\w]+-\d+)\s+—\s+(.+)'
 # Regex para milestones
 MILESTONE_PATTERN = r'###\s+([\w]+-\d+)\s+—\s+([^\n]+)\n\*\*Transición\*\*:\s*`([^`]+)`\s*\n\n\*\*Test de integración de milestone\*\*:\s*([^\n]+)'
 
@@ -91,7 +92,12 @@ def parse_epic_md(file_path):
     # Parsear tabla de resumen para extraer estados y stack
     stack_match = re.search(r'\|\s*Stack\s*\|\s*(.+?)\s*\|', content)
     if stack_match:
-        epic_json["epic"]["stack"] = [s.strip() for s in stack_match.group(1).split('·')]
+        stack_raw = stack_match.group(1).strip()
+        # Eliminar corchetes decorativos si existen al inicio y final
+        if stack_raw.startswith('[') and stack_raw.endswith(']'):
+            stack_raw = stack_raw[1:-1]
+        
+        epic_json["epic"]["stack"] = [s.strip() for s in stack_raw.split('·') if s.strip()]
 
     initial_state = re.search(r'\|\s*Estado inicial\s*\|\s*(.+?)\s*\|', content)
     if initial_state:
@@ -147,7 +153,13 @@ def parse_epic_md(file_path):
         branch_name = re.sub(r'[^a-zA-Z0-9\-]', '-', epic_name).strip('-').lower()
 
         # Resolver el milestone correspondiente a esta tarea
-        task_milestone = milestones_by_id.get(milestone_id, None)
+        task_milestone = milestones_by_id.get(milestone_id)
+        if milestone_id and not task_milestone:
+            warnings.warn(
+                f"[CONSISTENCIA] Tarea {task_id}: El milestone '{milestone_id}' "
+                f"no está definido en la sección ## Milestones.",
+                stacklevel=2
+            )
 
         # Construir el contexto épico que se inyecta en la descripción
         epic_context_md = _build_epic_context_md(epic_json["epic"], task_milestone)
@@ -178,17 +190,22 @@ def parse_epic_md(file_path):
 
 if __name__ == "__main__":
     import sys
-    import io
-    
-    # Forzar encoding UTF-8 para evitar errores en Windows con emojis
-    if sys.stdout.encoding != 'utf-8':
+    # Configuración defensiva de encoding para terminales Windows
+    if sys.platform == "win32" and hasattr(sys.stdout, 'buffer') and sys.stdout.encoding != 'utf-8':
+        import io
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
         
-    input_file = sys.argv[1] if len(sys.argv) > 1 else "EPIC-EXAMPLE.md"
-    output_file = input_file.replace('.md', '.json')
+    input_arg = sys.argv[1] if len(sys.argv) > 1 else "EPIC-EXAMPLE.md"
+    
+    # Usar os.path para evitar fallos con múltiples puntos o path traversal
+    input_filename = os.path.basename(input_arg)
+    file_base, _ = os.path.splitext(input_filename)
+    
+    # El output se genera en el directorio de ejecución actual para evitar Path Traversal
+    output_file = f"{file_base}.json"
     
     try:
-        result_json = parse_epic_md(input_file)
+        result_json = parse_epic_md(input_arg)
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(result_json, f, indent=2, ensure_ascii=False)
         print(f"✅ ¡Éxito! JSON generado correctamente en: {output_file}")
