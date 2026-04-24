@@ -58,6 +58,12 @@ Para optimizar el contexto del agente (LLM), utilizamos **Delimitadores Semánti
 ### 3.3 [Ej. Estrategia de Migraciones/Infraestructura]
 [Define cómo el agente debe manejar los cambios destructivos y constructivos en la infraestructura de datos o código]
 
+### 3.5 Descentralización de Repositorios (Dynamic Repository Protocol)
+Para habilitar el soporte multi-proyecto, el sistema debe ser agnóstico al repositorio global:
+1. **Source of Truth**: El repositorio objetivo se define a nivel de **Épica**. El archivo Markdown debe incluir el campo `Repositorio` en su tabla de resumen inicial.
+2. **Inyección Dinámica**: El parser `epic_to_json.py` extrae este valor y lo inyecta en cada tarea para su persistencia en la base de datos.
+3. **Aislamiento Semántico**: Cada repositorio genera su propia colección en ChromaDB basada en el slug del repo.
+
 ---
 
 ## 4. Protocolos de Gobernanza

@@ -115,8 +115,10 @@ def audit_description(task_id, description):
             "quality": {"score": 0, "findings": []}
         }
 
-    # 0. Normalización Segura (Preserva genéricos como Array<string>)
-    clean_desc = description.replace('\r\n', '\n').strip()
+    # 0. Normalización Segura (Saneamiento de tags y saltos de línea)
+    # Eliminamos tags HTML/Pseudo-tags inyectados por LLMs
+    clean_desc = re.sub(r"<.*?>", "", description)
+    clean_desc = clean_desc.replace('\r\n', '\n').strip()
 
     # ═══════════════════════════════════════════════════════════
     # GATE 1: INTEGRIDAD ESTRUCTURAL (Cualquier fallo = BLOCK)

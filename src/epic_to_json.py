@@ -89,23 +89,37 @@ def parse_epic_md(file_path):
         epic_json["epic"]["id"] = epic_header_match.group(1).strip()
         epic_json["epic"]["name"] = epic_header_match.group(2).strip()
 
-    # Parsear tabla de resumen para extraer estados y stack
-    stack_match = re.search(r'\|\s*Stack\s*\|\s*(.+?)\s*\|', content)
-    if stack_match:
-        stack_raw = stack_match.group(1).strip()
-        # Eliminar corchetes decorativos si existen al inicio y final
-        if stack_raw.startswith('[') and stack_raw.endswith(']'):
-            stack_raw = stack_raw[1:-1]
+    # 1.1 Parsear tabla de resumen para extraer estados, stack y repositorio
+    # Se define el bloque de búsqueda entre los encabezados de Resumen y Milestones
+    summary_section = re.search(r'## Resumen de la Épica(.*?)## Milestones', content, re.DOTALL)
+    if summary_section:
+        summary_text = summary_section.group(1)
         
-        epic_json["epic"]["stack"] = [s.strip() for s in stack_raw.split('·') if s.strip()]
+        # El repositorio se busca exclusivamente dentro de ese bloque
+        repo_match = re.search(r'\|\s*Repositorio\s*\|\s*(.+?)\s*\|', summary_text)
+        if repo_match:
+            epic_json["epic"]["github_repo"] = repo_match.group(1).strip()
+        else:
+            epic_json["epic"]["github_repo"] = None
 
-    initial_state = re.search(r'\|\s*Estado inicial\s*\|\s*(.+?)\s*\|', content)
-    if initial_state:
-        epic_json["epic"]["initial_state"] = initial_state.group(1).strip()
+        # Otros metadatos de la tabla (ahora buscados dentro de summary_text)
+        stack_match = re.search(r'\|\s*Stack\s*\|\s*(.+?)\s*\|', summary_text)
+        if stack_match:
+            stack_raw = stack_match.group(1).strip()
+            if stack_raw.startswith('[') and stack_raw.endswith(']'):
+                stack_raw = stack_raw[1:-1]
+            epic_json["epic"]["stack"] = [s.strip() for s in stack_raw.split('·') if s.strip()]
 
-    final_state = re.search(r'\|\s*Estado final\s*\|\s*(.+?)\s*\|', content)
-    if final_state:
-        epic_json["epic"]["final_state"] = final_state.group(1).strip()
+        initial_state = re.search(r'\|\s*Estado inicial\s*\|\s*(.+?)\s*\|', summary_text)
+        if initial_state:
+            epic_json["epic"]["initial_state"] = initial_state.group(1).strip()
+
+        final_state = re.search(r'\|\s*Estado final\s*\|\s*(.+?)\s*\|', summary_text)
+        if final_state:
+            epic_json["epic"]["final_state"] = final_state.group(1).strip()
+    else:
+        # Fallback de seguridad si no existe la sección
+        epic_json["epic"]["github_repo"] = None
 
     # 2. Parsear Milestones
     milestones_section = re.search(r'## Milestones(.*?)## Tasks', content, re.DOTALL)
@@ -129,8 +143,11 @@ def parse_epic_md(file_path):
     
     # El primer bloque es el intro (Epic, Milestones), lo ignoramos
     for block in task_blocks[1:]:
+        # Saneamiento inicial: Eliminamos tags HTML/Pseudo-tags
+        clean_block = re.sub(r"<.*?>", "", block)
+        
         # Re-agregamos el "# " que el split quitó
-        full_block = "# " + block
+        full_block = "# " + clean_block
         
         # Extraer ID y Título (generalizado)
         title_match = re.match(rf'# ({TASK_ID_PATTERN}) — ([^\n]+)', full_block)
@@ -167,20 +184,28 @@ def parse_epic_md(file_path):
         # La descripción lleva el contexto épico prepended para que Jules
         # reciba el panorama completo al leer la tarea desde BD
         enriched_description = epic_context_md + full_block.strip()
-
+        # Extraer Dependencias consumidas (Generalizado para cualquier TASK_ID_PATTERN)
+        deps_match = re.search(r"## Dependencias consumidas(.*?)(##|$)", full_block, re.DOTALL | re.IGNORECASE)
+        deps = []
+        if deps_match:
+            # Captura todos los IDs que coincidan con el patrón definido al inicio del archivo
+            deps = re.findall(TASK_ID_PATTERN, deps_match.group(1))
+            deps = sorted(list(set(deps))) # Limpiar duplicados y normalizar
         epic_json["tasks"].append({
             "id": task_id,
             "title": task_title,
-            "milestone_id": milestone_id,
+            "milestone_id": milestone_id,  # Paridad de datos (acceso plano)
             "target_branch": f"epic/{epic_id}-{branch_name}",
             "priority": risk,
             "status": "draft",
+            "dependencies": deps,          # Campo recuperado del proyecto
             "created_at": datetime.now().isoformat(),
             "epic_context": {
                 "epic": epic_json["epic"],
                 "milestone": task_milestone
             },
-            "description": enriched_description
+            "description": enriched_description,
+            "github_repo": epic_json["epic"].get("github_repo")
         })
 
     # Actualizar contadores
